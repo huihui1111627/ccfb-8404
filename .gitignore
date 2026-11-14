@@ -16,3 +16,10 @@ node_modules/
 __pycache__/
 .venv/
 venv/
+
+# runtime artefacts
+data/app.db
+data/app.db-*
+data/datasets/
+data/runs/
+.pytest_cache/

@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>公交客流 OD 推算平台</title>
+  <link rel="stylesheet" href="/static/leaflet.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="dot"></span>
+      <div><b>公交 OD 推算</b><small>Bus OD Inference Console</small></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-page="dashboard" class="active"><span>总览</span></button>
+      <div class="sec">数据</div>
+      <button data-page="import"><span>数据导入</span></button>
+      <button data-page="matching"><span>站点匹配</span></button>
+      <div class="sec">分析</div>
+      <button data-page="chains"><span>出行链</span></button>
+      <button data-page="od"><span>OD 矩阵</span></button>
+      <button data-page="metrics"><span>指标看板</span></button>
+      <div class="sec">运营</div>
+      <button data-page="compare"><span>方案对比</span></button>
+      <button data-page="params"><span>参数设置</span></button>
+    </nav>
+    <div class="health" id="health">服务状态检查中…</div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">总览</h1>
+        <div class="sub" id="page-sub">导入数据 → 运行推算 → 查看 OD 与断面</div>
+      </div>
+      <div class="spacer"></div>
+      <div class="run-pill">
+        <span style="color:var(--muted)">当前结果</span>
+        <select id="run-select" title="选择一次推算结果"></select>
+      </div>
+      <button class="primary" id="btn-run">运行推算</button>
+    </header>
+
+    <div class="content">
+      <!-- ============================================================ 总览 -->
+      <section class="page active" id="page-dashboard">
+        <div id="dash-empty" class="panel"><div class="empty">
+          还没有任何推算结果。先去 <a href="#" data-goto="import">数据导入</a> 导入数据，
+          或直接运行演示数据集。
+        </div></div>
+
+        <div id="dash-body" style="display:none">
+          <div class="cards" id="dash-cards"></div>
+
+          <div class="steps" id="dash-steps"></div>
+
+          <div class="split">
+            <div class="panel">
+              <div class="head"><h2>推算准确率（对照真值）</h2>
+                <div class="spacer"></div><span class="hint" id="acc-hint"></span></div>
+              <div class="body" id="acc-body"></div>
+            </div>
+            <div class="panel">
+              <div class="head"><h2>高峰断面 Top 5</h2></div>
+              <div class="body" id="dash-peak"></div>
+            </div>
+          </div>
+
+          <div class="split">
+            <div class="panel">
+              <div class="head"><h2>时段客流</h2></div>
+              <div class="body" id="dash-periods"></div>
+            </div>
+            <div class="panel">
+              <div class="head"><h2>Top OD 流向</h2></div>
+              <div class="body tight" id="dash-topod"></div>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="head"><h2>清理与告警</h2></div>
+            <div class="body" id="dash-warnings"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================== 导入 -->
+      <section class="page" id="page-import">
+        <div class="panel">
+          <div class="head">
+            <h2>数据导入</h2><div class="spacer"></div>
+            <button id="btn-demo-load">载入演示数据</button>
+          </div>
+          <div class="body">
+            <div class="hint" style="margin-bottom:12px">
+              支持 CSV / Excel / Parquet / JSON。四类数据：刷卡（AFC）、车辆 GPS（AVL）、线路站点表，以及可选的真值文件（用于评估准确率，不参与推算）。
+            </div>
+            <div id="upload-slots" class="split"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="head"><h2>已导入数据集</h2><div class="spacer"></div>
+            <span class="hint">点击可预览与修改字段映射</span></div>
+          <div class="body tight"><div id="dataset-list"></div></div>
+        </div>
+      </section>
+
+      <!-- ========================================================== 匹配 -->
+      <section class="page" id="page-matching">
+        <div class="toolbar">
+          <label>线路</label><select id="mt-route"></select>
+          <label>状态</label>
+          <select id="mt-status">
+            <option value="all">全部</option>
+            <option value="valid">匹配成功</option>
+            <option value="duplicate">重复刷卡</option>
+            <option value="invalid">无法匹配</option>
+          </select>
+          <div class="sep"></div>
+          <button id="mt-refresh">刷新</button>
+        </div>
+        <div class="split">
+          <div class="panel">
+            <div class="head"><h2>刷卡 → 车辆停站匹配</h2></div>
+            <div class="body tight"><div id="mt-taps"></div><div class="pager" id="mt-taps-pager"></div></div>
+          </div>
+          <div class="panel">
+            <div class="head"><h2>停站事件识别</h2></div>
+            <div class="body tight"><div id="mt-events"></div><div class="pager" id="mt-events-pager"></div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="head"><h2>站点匹配质量</h2><div class="spacer"></div>
+            <span class="hint">GPS 吸附距离越小、匹配成功率越高越好</span></div>
+          <div class="body tight"><div id="mt-stops"></div></div>
+        </div>
+      </section>
+
+      <!-- ========================================================== 出行链 -->
+      <section class="page" id="page-chains">
+        <div class="toolbar">
+          <label>卡号</label><input type="text" id="ch-card" placeholder="输入卡号查询完整出行链">
+          <label>推算方式</label><select id="ch-method"><option value="all">全部</option></select>
+          <label>置信度</label>
+          <select id="ch-uncertain"><option value="all">全部</option><option value="false">确定</option><option value="true">不确定</option></select>
+          <div class="sep"></div>
+          <button id="ch-refresh">刷新</button>
+          <button id="ch-export">导出 CSV</button>
+        </div>
+        <div class="panel">
+          <div class="head"><h2>出行链明细</h2><div class="spacer"></div>
+            <span class="hint" id="ch-summary"></span></div>
+          <div class="body tight"><div id="ch-table"></div><div class="pager" id="ch-pager"></div></div>
+        </div>
+        <div class="panel" id="ch-detail-panel" style="display:none">
+          <div class="head"><h2>卡片出行链</h2><div class="spacer"></div>
+            <button class="ghost" id="ch-detail-close">关闭</button></div>
+          <div class="body" id="ch-detail"></div>
+        </div>
+      </section>
+
+      <!-- ============================================================ OD -->
+      <section class="page" id="page-od">
+        <div class="toolbar">
+          <label>时段</label><select id="od-period"></select>
+          <label>线路</label><select id="od-route"></select>
+          <label>方向</label><select id="od-dir">
+            <option value="-1">全部</option><option value="0">上行</option><option value="1">下行</option>
+          </select>
+          <label>最小客流</label><input type="number" id="od-min" value="0" min="0" step="1" style="width:80px">
+          <div class="sep"></div>
+          <button id="od-refresh">刷新</button>
+          <button id="od-export">导出 CSV</button>
+        </div>
+        <div class="cards" id="od-cards"></div>
+        <div class="map-layout">
+          <div class="panel" style="margin:0">
+            <div class="head"><h2>流向列表</h2><div class="spacer"></div>
+              <span class="hint" id="od-count"></span></div>
+            <div class="body tight">
+              <div id="od-list" class="table-wrap" style="max-height:520px"></div>
+            </div>
+            <div class="pager" id="od-pager"></div>
+          </div>
+          <div>
+            <div class="panel" style="margin:0 0 12px">
+              <div class="head"><h2>OD 流向地图</h2><div class="spacer"></div>
+                <label class="hint"><input type="checkbox" id="od-show-stops" checked> 显示站点</label>
+              </div>
+              <div class="body tight">
+                <div class="map-main" style="height:540px">
+                  <div id="map"></div>
+                  <div class="map-hint" id="map-hint">线条粗细与颜色代表客流，点击线查看 OD 明细</div>
+                </div>
+                <div class="slide-wrap">
+                  <div class="slide-label"><span>显示前 N 条流向</span><span id="od-topn-val">120</span></div>
+                  <input type="range" id="od-topn" min="10" max="400" step="10" value="120">
+                </div>
+              </div>
+            </div>
+            <div class="panel" style="margin:0">
+              <div class="head"><h2>客流强度</h2></div>
+              <div class="body"><div id="od-legend"></div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================== 指标 -->
+      <section class="page" id="page-metrics">
+        <div class="toolbar">
+          <label>时段</label><select id="me-period"></select>
+          <label>线路</label><select id="me-route"></select>
+          <label>方向</label><select id="me-dir">
+            <option value="-1">全部</option><option value="0">上行</option><option value="1">下行</option>
+          </select>
+          <div class="sep"></div>
+          <button id="me-refresh">刷新</button>
+          <button id="me-export">导出断面 CSV</button>
+        </div>
+        <div class="cards" id="me-cards"></div>
+        <div class="split">
+          <div class="panel">
+            <div class="head"><h2>分时段客流与满载率</h2></div>
+            <div class="body" id="me-load"></div>
+          </div>
+          <div class="panel">
+            <div class="head"><h2>站点上下客量</h2></div>
+            <div class="body" id="me-stops" style="max-height:340px;overflow:auto"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="head"><h2>断面客流</h2><div class="spacer"></div>
+            <span class="hint">按线路方向排序，满载率 = 断面客流 / 定员</span></div>
+          <div class="body tight"><div id="me-sections"></div></div>
+        </div>
+        <div class="panel">
+          <div class="head"><h2>清洁与质量</h2></div>
+          <div class="body" id="me-quality"></div>
+        </div>
+      </section>
+
+      <!-- =========================================================== 对比 -->
+      <section class="page" id="page-compare">
+        <div class="panel">
+          <div class="head"><h2>方案对比</h2><div class="spacer"></div>
+            <span class="hint">选择 2-4 次运行，对比参数改动带来的差异</span></div>
+          <div class="body">
+            <div id="cmp-select" class="toolbar"></div>
+            <button class="primary" id="cmp-run">开始对比</button>
+          </div>
+        </div>
+        <div id="cmp-result"></div>
+      </section>
+
+      <!-- =========================================================== 参数 -->
+      <section class="page" id="page-params">
+        <div class="panel">
+          <div class="head"><h2>推算参数</h2><div class="spacer"></div>
+            <button class="ghost" id="pm-reset">恢复默认</button>
+            <button class="primary" id="pm-run">用当前参数运行</button>
+          </div>
+          <div class="body">
+            <div class="hint" id="pm-hint" style="margin-bottom:12px"></div>
+            <div class="param-grid" id="pm-grid"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="head"><h2>时段划分</h2><div class="spacer"></div>
+            <button id="pm-add-period">添加时段</button></div>
+          <div class="body"><div class="periods-editor" id="pm-periods"></div></div>
+        </div>
+        <div class="panel">
+          <div class="head"><h2>运行</h2></div>
+          <div class="body">
+            <div class="toolbar">
+              <label>数据集</label>
+              <select id="pm-ds-taps"></select>
+              <select id="pm-ds-gps"></select>
+              <select id="pm-ds-stops"></select>
+              <select id="pm-ds-truth"></select>
+            </div>
+            <div class="toolbar">
+              <input type="text" id="pm-run-name" placeholder="运行名称（可选）" style="width:260px">
+              <button class="primary" id="pm-submit">开始推算</button>
+            </div>
+            <div class="progress" id="pm-progress-wrap" style="display:none;margin-top:14px">
+              <div class="fill" id="pm-progress"></div>
+            </div>
+            <div class="log" id="pm-log" style="margin-top:12px;display:none"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="modal-back" id="modal-back"><div class="modal">
+  <div class="head"><h3 id="modal-title">预览</h3><div class="spacer"></div>
+    <button class="ghost" id="modal-close">关闭</button></div>
+  <div class="body" id="modal-body"></div>
+</div></div>
+
+<script src="/static/leaflet.js"></script>
+<script src="/static/core.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

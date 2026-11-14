@@ -1,0 +1,16 @@
+{
+  "routes": 8,
+  "vehicles": 29,
+  "trips": 921,
+  "stops": 67,
+  "cards": 2876,
+  "taps": 6133,
+  "gps_rows": 124244,
+  "truth_legs": 6054,
+  "journeys": 4987,
+  "transfer_legs": 1065,
+  "missing_taps": 84,
+  "duplicate_taps": 96,
+  "invalid_taps": 67,
+  "gps_drift_injected": 501
+}
